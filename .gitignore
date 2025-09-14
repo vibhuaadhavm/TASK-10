@@ -1,207 +1,204 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
+# Install necessary packages
+!pip install requests
+Requirement already satisfied: requests in c:\users\sonal\appdata\roaming\python\python312\site-packages (2.32.3)
+Requirement already satisfied: charset-normalizer<4,>=2 in c:\users\sonal\appdata\roaming\python\python312\site-packages (from
+requests) (3.4.1)
+Requirement already satisfied: idna<4,>=2.5 in c:\users\sonal\appdata\roaming\python\python312\site-packages (from requests)
+(3.10)
+Requirement already satisfied: urllib3<3,>=1.21.1 in c:\users\sonal\appdata\roaming\python\python312\site-packages (from reques
+ts) (2.3.0)
+Requirement already satisfied: certifi>=2017.4.17 in c:\users\sonal\appdata\roaming\python\python312\site-packages (from reques
+ts) (2025.1.31)
 
-# C extensions
-*.so
+# import necessary packages
+import requests
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
+In [19]:
+import json
+import sys
+# List of search terms (trends to analyze in Google Books Ngram Viewer)
+TERMS = ["cursive", "penmanship", "handwriting"] # Example: missing trends in millennials/Gen Z lifestyles
+# Start year of analysis (earliest year to include in results)
+YEAR_START = 1800
+# End year of analysis (latest year to include in results)
+YEAR_END = 2025
+# Google Books Ngram corpus ID (15 = English, modern standard corpus)
+# Other IDs correspond to different languages/corpora (check Ngram Viewer UI for details)
+CORPUS = 15
+# Smoothing factor (0 = no smoothing, higher numbers smooth out yearly fluctuations)
+SMOOTHING = 0
+# HTTP User-Agent header (used to mimic a browser request when fetching data)
+USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100 Safari/537.36"
+# Filepath for saving extracted Ngram data in CSV format
+OUTPUT_CSV = "ngrams_output.csv"
+# Filepath for saving the generated trend plot as a PNG image
+PLOT_PNG = "ngrams_plot.png"
+# Filepath for saving the generated word cloud of terms as a PNG image
+WORDCLOUD_PNG = "ngrams_wordcloud.png"
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+def fetch_ngram_json(terms, year_start=YEAR_START, year_end=YEAR_END, corpus=CORPUS, smoothing=SMOOTHING):
+ """
+ Uses the Google Ngram JSON endpoint:
+ https://books.google.com/ngrams/json?content=...&year_start=...&year_end=...&corpus=...&smoothing=...
+ Returns parsed JSON (list of dicts) on success, raises on failure.
+ """
+ url = "https://books.google.com/ngrams/json?content=cursive,penmanship,handwriting&year_start=1800&year_end=2025&corpus=15
+ params = {
+ "content": ",".join(terms), In [23]: In [27]:
+ "year_start": year_start,
+ "year_end": year_end,
+ "corpus": corpus,
+ "smoothing": smoothing,
+ }
+ headers = {"User-Agent": USER_AGENT}
+ r = requests.get(url, params=params, headers=headers, timeout=30)
+ r.raise_for_status()
+ # The endpoint returns JSON that pandas.read_json can also parse; here we return Python list/dict
+ return r.json()
+def json_to_dataframe(ngram_json, year_start=YEAR_START, year_end=YEAR_END):
+ """
+ Convert the JSON returned by the endpoint into a tidy pandas DataFrame:
+ columns = ['year', 'ngram', 'freq']
+ """
+ years = list(range(year_start, year_end + 1))
+ rows = []
+ for series in ngram_json:
+ ngram = series.get("ngram")
+ timeseries = series.get("timeseries", [])
+ if len(timeseries) != len(years):
+ # fill/truncate defensively
+ timeseries = (timeseries + [0] * len(years))[:len(years)]
+ for y, v in zip(years, timeseries):
+ rows.append({"year": y, "ngram": ngram, "freq": float(v)})
+ df = pd.DataFrame(rows)
+ return df
+def pivot_timeseries(df):
+ """Return a wide DataFrame indexed by year with each ngram as a column (frequencies)."""
+ pivot = df.pivot(index="year", columns="ngram", values="freq").fillna(0)
+ return pivot
+def save_csv(pivot_df, filename=OUTPUT_CSV):
+ """
+ Save the given pivoted DataFrame (trend data) to a CSV file.
+ Parameters:
+ pivot_df : pandas.DataFrame
+ The pivoted DataFrame containing Google Ngram data. In [29]: In [31]: In [33]:
+ Typically, rows = years and columns = search terms.
+ """
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+ # Save DataFrame as CSV (include index = years)
+ pivot_df.to_csv(filename, index=True)
+ # Print confirmation for user
+ print(f"[+] Saved CSV to {filename}")
+def plot_timeseries(pivot_df, filename=PLOT_PNG):
+ plt.figure(figsize=(12,6))
+ ax = plt.gca()
+ pivot_df.plot(ax=ax, linewidth=2)
+ ax.set_xlabel("Year")
+ ax.set_ylabel("Relative frequency (%)")
+ ax.set_title("Google Books Ngram time series")
+ ax.grid(axis="y", alpha=0.3)
+ plt.legend(title="ngram", loc="upper right")
+ plt.tight_layout()
+ plt.savefig(filename, dpi=150)
+ plt.close()
+ print(f"[+] Saved time-series plot to {filename}")
+def generate_wordcloud(pivot_df, filename=WORDCLOUD_PNG):
+ """
+ Create a simple word cloud where word sizes are proportional to the overall mean frequency
+ across years for each ngram.
+ """
+ means = pivot_df.mean(axis=0).to_dict()
+ # WordCloud expects a text or a frequency dict; we feed frequency dict
+ wc = WordCloud(width=800, height=400, background_color="white")
+ wc.generate_from_frequencies(means)
+ wc.to_file(filename)
+ print(f"[+] Saved word cloud to {filename}")
+def compute_summary_stats(pivot_df):
+ """Return a dict of helpful summary statistics for each ngram."""
+ stats = {}
+ for col in pivot_df.columns:
+ series = pivot_df[col]
+In [35]: In [37]: In [39]:
+ stats[col] = {
+ "mean": float(np.mean(series)),
+ "median": float(np.median(series)),
+ "std": float(np.std(series, ddof=0)),
+ "max_value": float(series.max()),
+ "max_year": int(series.idxmax()),
+ "min_year": int(series.idxmin())
+ }
+ return stats
+def prepare_llm_prompt(summary_stats, pivot_df, top_n_years=5):
+ """
+ Prepare a textual prompt to send to an LLM along with the CSV or summary.
+ The prompt asks the LLM for an interpretive summary and recommended
+ human-readable labels for the produced word cloud.
+ """
+ short_table = pivot_df.mean(axis=0).sort_values(ascending=False).head(top_n_years).to_dict()
+ prompt = {
+ "instruction": "You are given frequency time-series data (Google Ngram) for several terms. "
+ "Please produce a concise (3-6 sentence) summary about the trends, "
+"mentioning which term rose or fell and notable years, and suggest 10 short keywords "
+"suitable for a word cloud. Use the summary statistics and CSV data below.",
+ "summary_stats": summary_stats,
+ "top_mean_terms": short_table,
+ "note": "CSV file attached separately (ngrams_output.csv). Provide the textual summary and a 10-word list for the clou
+ }
+ return json.dumps(prompt, indent=2)
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# Convert the fetched Ngram JSON into a long-format DataFrame
+# (columns: year, term, frequency) for easier analysis/plotting
+df_long = json_to_dataframe(ngram_json)
+# Pivot the long DataFrame into wide format (rows = years, columns = terms, values = frequencies)
+pivot_df = pivot_timeseries(df_long)
+# Save the pivoted DataFrame to a CSV file for later use
+save_csv(pivot_df)
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
+# Generate and display a time series plot of term frequencies from the pivoted DataFrame
+plot_timeseries(pivot_df)
 
-# Translations
-*.mo
-*.pot
+# Generate and save a word cloud image from the pivoted DataFrame
+generate_wordcloud(pivot_df)
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+# Compute summary statistics (e.g., mean, max, trends) for each term
+stats = compute_summary_stats(pivot_df)
 
-# Flask stuff:
-instance/
-.webassets-cache
 
-# Scrapy stuff:
-.scrapy
 
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
-
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
-
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-#poetry.toml
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
-#pdm.lock
-#pdm.toml
-.pdm-python
-.pdm-build/
-
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-#pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
-
-# Abstra
-# Abstra is an AI-powered process automation framework.
-# Ignore directories containing user credentials, local state, and settings.
-# Learn more at https://abstra.io/docs
-.abstra/
-
-# Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
-
-# Ruff stuff:
-.ruff_cache/
-
-# PyPI configuration file
-.pypirc
-
-# Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
-.cursorignore
-.cursorindexingignore
-
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+FREQUENCY DICTIONARY:
+# Build a simple weighted frequency dict (higher weight for earlier items)
+import os In [119…
+In [121…
+In [127…
+freqs = {}
+n = len(keywords)
+for i, k in enumerate(keywords):
+ freqs[k] = n - i # e.g., first item gets highest weight
+# Find a font for WordCloud (helps avoid "Only supported for TrueType fonts" error)
+possible_fonts = [
+ "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", # common on Linux
+ "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+ "/Library/Fonts/Arial.ttf", # macOS
+ "C:\\Windows\\Fonts\\Arial.ttf" # Windows
+]
+font_path = None
+for p in possible_fonts:
+ if os.path.exists(p):
+ font_path = p
+ break
+wc_kwargs = dict(width=800, height=400, background_color="white", collocations=False)
+if font_path:
+ wc_kwargs['font_path'] = font_path
+# Generate word cloud
+wc = WordCloud(**wc_kwargs).generate_from_frequencies(freqs)
+# Save and show
+output_file = "wordcloud_handwriting.png"
+wc.to_file(output_file)
+plt.figure(figsize=(10,5))
+plt.imshow(wc, interpolation="bilinear")
+plt.axis("off")
+plt.title("Word Cloud (from LLM-generated keywords)")
+plt.show()
